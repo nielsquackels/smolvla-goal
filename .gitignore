@@ -1,0 +1,31 @@
+# The lerobot fork lives here but has its own git history — exclude from this repo
+lerobot/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Editable install artifacts
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+
+# Model checkpoints and datasets
+outputs/
+checkpoints/
+*.safetensors
+*.ckpt
+wandb/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
