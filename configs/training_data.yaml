@@ -1,0 +1,56 @@
+# Multi-dataset training recipe for SmolVLA-Goal.
+#
+# Each entry under `datasets` declares one LeRobotDataset and how its cameras
+# map to the canonical 4-slot vocabulary:
+#   observation.images.main        (primary external view)
+#   observation.images.secondary   (secondary external view, optional)
+#   observation.images.wrist       (wrist / gripper / eye-in-hand, optional)
+#   observation.goal_image.0       (auto-injected by GoalConditionedDataset)
+#
+# `cameras` maps source-key -> canonical-slot. Cameras not listed are dropped.
+# Canonical slots not covered by any source are filled with zero-pad + mask=False.
+
+episodes_per_task: 3
+seed: 42
+
+datasets:
+  - repo_id: whosricky/so101-megamix-v1
+    cameras:
+      observation.images.top: observation.images.main
+      observation.images.front: observation.images.secondary
+      observation.images.gripper: observation.images.wrist
+
+  - repo_id: lerobot/svla_so101_pickplace
+    cameras:
+      observation.images.up: observation.images.main
+      observation.images.side: observation.images.secondary
+      # no wrist camera — slot stays empty
+
+  - repo_id: observabot/so101_cloth_folding1
+    cameras:
+      observation.images.top: observation.images.main
+      observation.images.base: observation.images.secondary
+      observation.images.endeffector: observation.images.wrist
+
+  - repo_id: ud-smart-city/lerobot-so-101-manipulations
+    cameras:
+      observation.images.top: observation.images.main
+      observation.images.right_side: observation.images.secondary
+      observation.images.gripper: observation.images.wrist
+
+  - repo_id: youliangtan/so101-table-cleanup
+    cameras:
+      observation.images.front: observation.images.main
+      # no secondary external camera
+      observation.images.wrist: observation.images.wrist
+
+  - repo_id: lipsop/so101-block-in-bin-100ep
+    cameras:
+      observation.images.front: observation.images.main
+      observation.images.wrist: observation.images.wrist
+
+  - repo_id: seunghoney/so101_test2
+    cameras:
+      observation.images.front: observation.images.main
+      observation.images.side: observation.images.secondary
+      # no wrist camera
