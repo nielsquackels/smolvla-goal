@@ -10,6 +10,7 @@ Two patches:
   to WandB.
 """
 
+from lerobot.datasets.factory import resolve_delta_timestamps
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 import lerobot.scripts.lerobot_train as _lerobot_train
 
@@ -19,7 +20,7 @@ from .episode_selection import select_episodes_per_task
 from .goal_dataset import GoalConditionedDataset
 
 
-def _build_sub_dataset(entry: dict, episodes_per_task: int, seed: int):
+def _build_sub_dataset(entry: dict, episodes_per_task: int, seed: int, policy_cfg):
     """Build one LeRobotDataset → NormalizedCameraDataset → GoalConditionedDataset."""
     repo_id = entry["repo_id"]
     camera_map = entry["cameras"]
@@ -29,9 +30,10 @@ def _build_sub_dataset(entry: dict, episodes_per_task: int, seed: int):
     # everything — explicit filtering keeps per-dataset load cheap.
     meta_only = LeRobotDataset(repo_id)
     selected = select_episodes_per_task(meta_only.meta, episodes_per_task, seed)
+    delta_timestamps = resolve_delta_timestamps(policy_cfg, meta_only.meta)
     del meta_only  # release file handles before reopening with episodes filter
 
-    base = LeRobotDataset(repo_id, episodes=selected)
+    base = LeRobotDataset(repo_id, episodes=selected, delta_timestamps=delta_timestamps)
     normalized = NormalizedCameraDataset(base, camera_map=camera_map)
     return GoalConditionedDataset(normalized)
 
@@ -42,7 +44,10 @@ def _build_make_dataset(recipe: dict):
     n_per_task = recipe.get("episodes_per_task", 3)
 
     def make_dataset(cfg):
-        subs = [_build_sub_dataset(entry, n_per_task, seed) for entry in recipe["datasets"]]
+        subs = [
+            _build_sub_dataset(entry, n_per_task, seed, cfg.policy)
+            for entry in recipe["datasets"]
+        ]
         return ConcatLeRobotDataset(subs)
 
     return make_dataset
