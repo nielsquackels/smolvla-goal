@@ -151,17 +151,28 @@ class NormalizedCameraDataset:
     def __getitem__(self, idx):
         item = self._base[idx]
         out = dict(item)
-        # Drop all base camera keys; we re-add renamed ones below.
+        # Drop all base camera keys AND their _is_pad variants (added by LeRobot
+        # for delta_timestamps). Stale source names must not leak into batches.
         for k in self._base.meta.camera_keys:
             out.pop(k, None)
-        # Insert renamed + resized cameras.
+            out.pop(f"{k}_is_pad", None)
+        # Insert renamed + resized cameras; carry over _is_pad under the new name.
+        filled_is_pad: dict = {}
         for src, dst in self._camera_map.items():
             if src in item:
                 out[dst] = _resize_with_pad_uint8(item[src], self._target_hw)
                 out[f"{dst}_padding_mask"] = torch.tensor(True)
+                if f"{src}_is_pad" in item:
+                    out[f"{dst}_is_pad"] = item[f"{src}_is_pad"]
+                    filled_is_pad[dst] = item[f"{src}_is_pad"]
         # Fill any canonical slot that wasn't covered by the map.
         for canonical in self._canonical:
             if canonical not in out:
                 out[canonical] = torch.zeros(self._target_chw, dtype=torch.uint8)
                 out[f"{canonical}_padding_mask"] = torch.tensor(False)
+                # Keep key-set uniform across datasets: add zero _is_pad if other
+                # cameras in this item have one (same shape, all-False = not padded).
+                if filled_is_pad:
+                    template = next(iter(filled_is_pad.values()))
+                    out[f"{canonical}_is_pad"] = torch.zeros_like(template, dtype=torch.bool)
         return out
