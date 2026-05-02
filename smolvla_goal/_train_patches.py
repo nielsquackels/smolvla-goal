@@ -20,26 +20,42 @@ from .episode_selection import select_episodes_per_task
 from .goal_dataset import GoalConditionedDataset
 
 
-class _EpisodeByValueLookup:
-    """Proxy that makes `episodes[ep_idx]` look up by episode_index VALUE.
+class _EpisodeProxy:
+    """Episode metadata proxy that fixes two classes of community dataset bugs:
 
-    LeRobot's DatasetReader and DatasetMetadata do `meta.episodes[ep_idx]`,
-    which is positional indexing into the underlying HF Dataset. That
-    silently assumes episode rows are stored in `[0, 1, ..., N-1]` order;
-    several community datasets and v2.1→v3.0 conversions break that
-    assumption, returning the wrong episode's `dataset_from/to_index` →
-    `KeyError` deep inside the dataloader.
+    1. Out-of-order rows: looks up by episode_index VALUE, not row position.
+       LeRobot's DatasetReader does `meta.episodes[ep_idx]` expecting row N to
+       hold episode N; several community datasets and v2.1→v3.0 conversions
+       break that assumption.
+
+    2. Incorrect dataset_from/to_index: some datasets' episodes parquet has
+       wrong frame-range bounds.  We override them with ranges recomputed from
+       the actual loaded hf_dataset, so delta-timestamp clamping stays within
+       the frames that are really present in _absolute_to_relative_idx.
 
     Negative ints, slices, and column-name strings pass through unchanged.
     """
 
-    def __init__(self, hf_dataset):
-        self._inner = hf_dataset
-        self._pos_by_value = {int(v): i for i, v in enumerate(hf_dataset["episode_index"])}
+    def __init__(
+        self,
+        hf_episodes,
+        pos_by_value: dict[int, int],
+        ep_ranges: dict[int, tuple[int, int]],
+    ):
+        self._inner = hf_episodes
+        self._pos_by_value = pos_by_value
+        self._ep_ranges = ep_ranges
 
     def __getitem__(self, key):
-        if isinstance(key, int) and key >= 0 and key in self._pos_by_value:
-            return self._inner[self._pos_by_value[key]]
+        if isinstance(key, int) and key >= 0:
+            if key in self._pos_by_value:
+                row = dict(self._inner[self._pos_by_value[key]])
+            else:
+                row = dict(self._inner[key])
+            if key in self._ep_ranges:
+                row["dataset_from_index"] = self._ep_ranges[key][0]
+                row["dataset_to_index"] = self._ep_ranges[key][1]
+            return row
         return self._inner[key]
 
     def __len__(self):
@@ -53,6 +69,39 @@ class _EpisodeByValueLookup:
 
     def __getattr__(self, name):
         return getattr(self._inner, name)
+
+
+def _make_episode_proxy(base_dataset) -> _EpisodeProxy:
+    """Build an _EpisodeProxy from the already-loaded dataset.
+
+    Computes:
+    - pos_by_value: episode_index value → row position in meta.episodes
+    - ep_ranges:    episode_index value → (actual_from, actual_to) derived
+                    from the loaded frame parquet, not from the metadata
+    """
+    raw_episodes = base_dataset.meta.episodes
+    pos_by_value = {int(v): i for i, v in enumerate(raw_episodes["episode_index"])}
+
+    ep_ranges: dict[int, tuple[int, int]] = {}
+    hf = base_dataset.reader.hf_dataset
+    if hf is not None and hasattr(hf, "data"):
+        ep_col = hf.data.column("episode_index").to_pylist()
+        idx_col = hf.data.column("index").to_pylist()
+        lo: dict[int, int] = {}
+        hi: dict[int, int] = {}
+        for ep, abs_i in zip(ep_col, idx_col):
+            ep_int = int(ep)
+            if ep_int not in lo:
+                lo[ep_int] = abs_i
+                hi[ep_int] = abs_i + 1
+            else:
+                if abs_i < lo[ep_int]:
+                    lo[ep_int] = abs_i
+                if abs_i + 1 > hi[ep_int]:
+                    hi[ep_int] = abs_i + 1
+        ep_ranges = {ep: (lo[ep], hi[ep]) for ep in lo}
+
+    return _EpisodeProxy(raw_episodes, pos_by_value, ep_ranges)
 
 
 def _build_sub_dataset(entry: dict, episodes_per_task: int, seed: int, policy_cfg):
@@ -69,7 +118,7 @@ def _build_sub_dataset(entry: dict, episodes_per_task: int, seed: int, policy_cf
     del meta_only  # release file handles before reopening with episodes filter
 
     base = LeRobotDataset(repo_id, episodes=selected, delta_timestamps=delta_timestamps)
-    base.meta.episodes = _EpisodeByValueLookup(base.meta.episodes)
+    base.meta.episodes = _make_episode_proxy(base)
     normalized = NormalizedCameraDataset(base, camera_map=camera_map)
     return GoalConditionedDataset(normalized)
 
