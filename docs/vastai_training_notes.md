@@ -55,7 +55,11 @@ Standard LeRobot metrics (loss, lr, grad_norm, step time) plus the goal-
 embedding stats added in [smolvla_goal/_train_patches.py](../smolvla_goal/_train_patches.py):
 
 - `goal_emb/weight_norm` — L2 norm of `goal_type_embedding`. Starts near
-  zero (init std=0.02), should drift up.
+  zero (init std=0.02), should drift up. First run: clean S-curve from
+  ~0 to ~1.35, saturating around step 20k.
+
+  ![goal_emb/weight_norm S-curve, first run](images/goal_emb_weight_norm.png)
+
 - `goal_emb/grad_norm` — pre-clip L2 norm of the embedding's gradient,
   captured via `register_hook` before `optimizer.zero_grad()` runs.
 

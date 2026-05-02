@@ -133,8 +133,12 @@ The new parameter is ~960 floats. Genuinely the smallest possible change that ca
 - Smoke test passing
 - Goal-conditioned dataset wrapper implemented + tested
 - Multi-dataset training pipeline: working
-- First experiment (goal = final frame of own episode): **in progress** (30k steps on RTX 5090)
+- First experiment (goal = final frame of own episode): **complete** (30k steps on RTX 5090). The `goal_type_embedding`'s weight norm grew from ~0 to ~1.35 in a clean S-curve, saturating around step 20k — i.e. the model learned a non-trivial "this token is a goal" signal rather than treating it as noise.
+
+  ![goal_emb/weight_norm S-curve](docs/images/goal_emb_weight_norm.png)
+
 - Ablation (random-episode final frame as goal, loss should rise if the signal is being used): not yet run
+- Real-robot SO-101 evaluation: planned
 
 ## License
 
