@@ -93,18 +93,23 @@ Samples are drawn uniformly across the concatenated multi-dataset via `DataLoade
 ```bash
 # 1. Install (see Installation above).
 
-# 2. Download + convert v2.1 datasets. Run once.
+# 2. Download + convert v2.1 datasets. Run once; idempotent.
 python scripts/prepare_datasets.py
 
 # 3. Launch training.
 python train.py \
-  --config=configs/training_data.yaml \
   --policy.type=smolvla_goal \
-  --policy.path=lerobot/smolvla_base \
-  --output_dir=outputs/goal_run_0
+  --policy.pretrained_path=lerobot/smolvla_base \
+  --policy.repo_id=<your-hf-username>/smolvla-goal-run0 \
+  --output_dir=outputs/goal_run_0 \
+  --steps=30000 \
+  --batch_size=16 \
+  --save_freq=5000
 ```
 
-Checkpoints and wandb logs are written under `--output_dir`.
+Checkpoints are written under `--output_dir` and pushed to the Hub repo at
+`--policy.repo_id`. For the full step-by-step procedure including W&B setup
+and running on a rented GPU, see [docs/vastai_training_guide.md](docs/vastai_training_guide.md).
 
 ### Ablation (planned)
 
@@ -127,8 +132,8 @@ The new parameter is ~960 floats. Genuinely the smallest possible change that ca
 - Architecture implemented
 - Smoke test passing
 - Goal-conditioned dataset wrapper implemented + tested
-- Multi-dataset training pipeline: in progress
-- First experiment (goal = final frame of own episode): not yet run
+- Multi-dataset training pipeline: working
+- First experiment (goal = final frame of own episode): **in progress** (30k steps on RTX 5090)
 - Ablation (random-episode final frame as goal, loss should rise if the signal is being used): not yet run
 
 ## License
