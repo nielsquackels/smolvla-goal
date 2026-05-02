@@ -65,8 +65,26 @@ def _ensure_dummy_dataset_cli(recipe: dict) -> None:
         sys.argv.append(f"--dataset.repo_id={recipe['datasets'][0]['repo_id']}")
 
 
+def _check_hf_write_token() -> None:
+    """Warn early if the HF token won't be able to push the final checkpoint."""
+    try:
+        from huggingface_hub import HfApi
+        info = HfApi().whoami()
+        role = info.get("auth", {}).get("accessToken", {}).get("role", "")
+        if role and role not in ("write", "admin"):
+            print(
+                f"\nWARNING: HF token is read-only (role={role!r})."
+                " The final checkpoint push will fail.\n"
+                "Run `hf auth login` with a write-scope token before starting training.\n",
+                file=sys.stderr,
+            )
+    except Exception:
+        pass  # Not logged in or network unavailable — lerobot will surface it at push time.
+
+
 if __name__ == "__main__":
     recipe = _load_recipe(_pop_recipe_path())
     _install_patches(recipe)
     _ensure_dummy_dataset_cli(recipe)
+    _check_hf_write_token()
     _lerobot_train.main()
