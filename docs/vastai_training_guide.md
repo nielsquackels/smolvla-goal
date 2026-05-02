@@ -1,7 +1,8 @@
 # Training on vast.ai — step-by-step guide
 
-Tested on an RTX 5090 instance (32 GB VRAM). Should work on any 24 GB+ GPU
+Tested on an RTX 5090 instance (32 GB VRAM). Should work on any 24 GB+ GPU 
 that can run `vast.ai`'s PyTorch images.
+During training, only 9.2GB of the VRAM was usually used.
 
 ---
 
@@ -95,7 +96,7 @@ rm -rf outputs/goal_run_0
 python train.py \
   --policy.type=smolvla_goal \
   --policy.pretrained_path=lerobot/smolvla_base \
-  --policy.repo_id=nielsquackels/smolvla-goal-run0 \
+  --policy.repo_id=Niels2/smolvla-goal-run0 \
   --output_dir=outputs/goal_run_0 \
   --steps=30000 \
   --batch_size=16 \
@@ -140,6 +141,6 @@ and uploaded to W&B as artifacts.
 ## 9. After training
 
 The final checkpoint is pushed automatically to HuggingFace Hub at
-`huggingface.co/nielsquackels/smolvla-goal-run0`.
+`huggingface.co/Niels2/smolvla-goal-run0`.
 
 **Destroy the vast.ai instance.** Billing is per-second — don't forget.

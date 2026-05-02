@@ -66,20 +66,43 @@ def _ensure_dummy_dataset_cli(recipe: dict) -> None:
 
 
 def _check_hf_write_token() -> None:
-    """Warn early if the HF token won't be able to push the final checkpoint."""
+    """Warn early if the HF token won't be able to push the final checkpoint.
+
+    Catches two failure modes that otherwise only surface after training ends:
+      1. Token is read-only.
+      2. Token's namespace doesn't match `--policy.repo_id` (and isn't an org the
+         user belongs to).
+    """
+    repo_id = next(
+        (a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--policy.repo_id=")),
+        None,
+    )
     try:
         from huggingface_hub import HfApi
         info = HfApi().whoami()
-        role = info.get("auth", {}).get("accessToken", {}).get("role", "")
-        if role and role not in ("write", "admin"):
+    except Exception:
+        return  # Not logged in or network unavailable — lerobot will surface it at push time.
+
+    role = info.get("auth", {}).get("accessToken", {}).get("role", "")
+    if role and role not in ("write", "admin"):
+        print(
+            f"\nWARNING: HF token is read-only (role={role!r})."
+            " The final checkpoint push will fail.\n"
+            "Run `hf auth login` with a write-scope token before starting training.\n",
+            file=sys.stderr,
+        )
+
+    if repo_id and "/" in repo_id:
+        target_ns = repo_id.split("/", 1)[0]
+        owned = {info.get("name")} | {o.get("name") for o in info.get("orgs", [])}
+        owned.discard(None)
+        if target_ns not in owned:
             print(
-                f"\nWARNING: HF token is read-only (role={role!r})."
-                " The final checkpoint push will fail.\n"
-                "Run `hf auth login` with a write-scope token before starting training.\n",
+                f"\nWARNING: --policy.repo_id namespace {target_ns!r} is not owned by"
+                f" the logged-in HF user {info.get('name')!r} (orgs: {sorted(owned - {info.get('name')})})."
+                " The final checkpoint push will 403 after training completes.\n",
                 file=sys.stderr,
             )
-    except Exception:
-        pass  # Not logged in or network unavailable — lerobot will surface it at push time.
 
 
 if __name__ == "__main__":

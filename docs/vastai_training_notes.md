@@ -30,7 +30,7 @@ rm -rf outputs/goal_run_0
 python train.py \
   --policy.type=smolvla_goal \
   --policy.pretrained_path=lerobot/smolvla_base \
-  --policy.repo_id=nielsquackels/smolvla-goal-run0 \
+  --policy.repo_id=Niels2/smolvla-goal-run0 \
   --output_dir=outputs/goal_run_0 \
   --steps=30000 \
   --batch_size=16 \
@@ -44,7 +44,7 @@ python train.py \
 Detach from tmux with `Ctrl+b` then `d`. Reattach with `tmux attach`.
 
 After training:
-- Final checkpoint pushed to `huggingface.co/nielsquackels/smolvla-goal-run0`.
+- Final checkpoint pushed to `huggingface.co/Niels2/smolvla-goal-run0`.
 - Intermediate checkpoints in `outputs/goal_run_0/checkpoints/`, also
   uploaded as W&B artifacts every `save_freq=5000` steps.
 - **Destroy the vast.ai instance.** Billing is per-second.
@@ -172,9 +172,11 @@ tables. The proxy fixes it for natively-v3.0 datasets too.
 - **Patch `prepare_datasets.py` to verify the converted output's episode
   ordering**, or fix the converter to write episodes in
   `episode_index` order so the LeRobot bug doesn't bite.
-- **Add a hf_token-write check** in `prepare_datasets.py` or a
+- ~~**Add a hf_token-write check** in `prepare_datasets.py` or a
   preflight, so users find out *before* a 30k-step run completes that
-  the final push will fail.
+  the final push will fail.~~ ✓ `_check_hf_write_token` in `train.py`
+  validates both write scope and that the `--policy.repo_id` namespace
+  is owned by the logged-in user (or one of their orgs).
 - **Replace `--dataset.repo_id=<dummy>` shim** in `train.py`. We inject
   a fake `--dataset.repo_id` to satisfy draccus. Cleaner: register a
   custom `cfg.dataset.type=multi_yaml` that draccus accepts directly
