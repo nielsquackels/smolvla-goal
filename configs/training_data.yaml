@@ -32,11 +32,8 @@ datasets:
       observation.images.base: observation.images.secondary
       observation.images.endeffector: observation.images.wrist
 
-  - repo_id: ud-smart-city/lerobot-so-101-manipulations
-    cameras:
-      observation.images.top: observation.images.main
-      observation.images.right_side: observation.images.secondary
-      observation.images.gripper: observation.images.wrist
+  # ud-smart-city/lerobot-so-101-manipulations dropped — meta/info.json claims
+  # v3.0 but the repo has no v3.0 git tag, causing RevisionNotFoundError.
 
   - repo_id: youliangtan/so101-table-cleanup
     cameras:

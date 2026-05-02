@@ -78,12 +78,11 @@ Per-dataset camera mapping lives in [configs/training_data.yaml](configs/trainin
 | [whosricky/so101-megamix-v1](https://huggingface.co/datasets/whosricky/so101-megamix-v1) | 8 | 24 | top / front / gripper |
 | [lerobot/svla_so101_pickplace](https://huggingface.co/datasets/lerobot/svla_so101_pickplace) | 1 | 3 | up / side / — |
 | [observabot/so101_cloth_folding1](https://huggingface.co/datasets/observabot/so101_cloth_folding1) | 1 | 3 | top / base / endeffector |
-| [ud-smart-city/lerobot-so-101-manipulations](https://huggingface.co/datasets/ud-smart-city/lerobot-so-101-manipulations) | 1 | 3 | top / right_side / gripper |
 | [youliangtan/so101-table-cleanup](https://huggingface.co/datasets/youliangtan/so101-table-cleanup) | 4 | 12 | front / — / wrist |
 | [lipsop/so101-block-in-bin-100ep](https://huggingface.co/datasets/lipsop/so101-block-in-bin-100ep) | 1 | 3 | front / — / wrist |
 | [seunghoney/so101_test2](https://huggingface.co/datasets/seunghoney/so101_test2) | 1 | 3 | front / side / — |
 
-`xinjiehu76/so101-pick-place-dataset` was skipped — `meta/info.json` failed to fetch. 4 of the 7 datasets (observabot, youliangtan, lipsop, seunghoney) are codebase version v2.1 and get converted to v3.0 by `scripts/prepare_datasets.py` before training.
+`xinjiehu76/so101-pick-place-dataset` was skipped — `meta/info.json` failed to fetch. `ud-smart-city/lerobot-so-101-manipulations` was skipped — `meta/info.json` claims v3.0 but the repo has no v3.0 git tag, causing `RevisionNotFoundError`. 4 of the 6 datasets (observabot, youliangtan, lipsop, seunghoney) are codebase version v2.1 and get converted to v3.0 by `scripts/prepare_datasets.py` before training.
 
 ### Sampling
 
