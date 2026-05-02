@@ -25,13 +25,15 @@ The tag is initialized near zero, so at the start of finetuning the goal image i
 ```bash
 git clone https://github.com/nielsquackels/smolvla-goal.git
 cd smolvla-goal
-git clone https://github.com/huggingface/lerobot.git
 
 conda create -n smolvla-goal python=3.12
 conda activate smolvla-goal
-pip install -e "lerobot/[smolvla]"
-pip install -e .
+bash setup.sh
 ```
+
+`setup.sh` clones LeRobot, installs both projects, and pins torchcodec to a
+CPU build (avoids CUDA-NPP linkage issues on rented GPUs). Idempotent — safe
+to re-run.
 
 Smoke test:
 
