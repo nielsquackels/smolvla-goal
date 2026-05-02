@@ -1,0 +1,91 @@
+# Copyright 2026 Niels Quackels. All rights reserved.
+# Licensed under the Apache License, Version 2.0.
+
+"""Monkeypatches applied to `lerobot.scripts.lerobot_train`.
+
+Two patches:
+- `make_dataset` is replaced with a builder that constructs our concat-of-
+  goal-conditioned-normalized LeRobotDatasets from a YAML recipe.
+- `update_policy` is wrapped to log `goal_type_embedding` weight/grad norms
+  to WandB.
+"""
+
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+import lerobot.scripts.lerobot_train as _lerobot_train
+
+from .camera_normalize import NormalizedCameraDataset
+from .concat_dataset import ConcatLeRobotDataset
+from .episode_selection import select_episodes_per_task
+from .goal_dataset import GoalConditionedDataset
+
+
+def _build_sub_dataset(entry: dict, episodes_per_task: int, seed: int):
+    """Build one LeRobotDataset → NormalizedCameraDataset → GoalConditionedDataset."""
+    repo_id = entry["repo_id"]
+    camera_map = entry["cameras"]
+
+    # First load meta-only to pick episodes, then load the filtered dataset.
+    # A lazy alternative is to load full then filter, but loading full decodes
+    # everything — explicit filtering keeps per-dataset load cheap.
+    meta_only = LeRobotDataset(repo_id)
+    selected = select_episodes_per_task(meta_only.meta, episodes_per_task, seed)
+    del meta_only  # release file handles before reopening with episodes filter
+
+    base = LeRobotDataset(repo_id, episodes=selected)
+    normalized = NormalizedCameraDataset(base, camera_map=camera_map)
+    return GoalConditionedDataset(normalized)
+
+
+def _build_make_dataset(recipe: dict):
+    """Return a `make_dataset(cfg)` closure bound to a specific recipe."""
+    seed = recipe.get("seed", 0)
+    n_per_task = recipe.get("episodes_per_task", 3)
+
+    def make_dataset(cfg):
+        subs = [_build_sub_dataset(entry, n_per_task, seed) for entry in recipe["datasets"]]
+        return ConcatLeRobotDataset(subs)
+
+    return make_dataset
+
+
+def _find_goal_embedding(policy):
+    """Traverse accelerate/DDP wrappers to find goal_type_embedding, or return None."""
+    for candidate in (policy, getattr(policy, "module", None)):
+        if candidate is None:
+            continue
+        gem = getattr(getattr(candidate, "model", None), "goal_type_embedding", None)
+        if gem is not None:
+            return gem
+    return None
+
+
+def _wrap_update_policy(original):
+    def _update_policy_with_goal_logging(train_metrics, policy, batch, *args, **kwargs):
+        gem = _find_goal_embedding(policy)
+
+        # Capture grad norm during backward (zero_grad is called inside update_policy,
+        # so we cannot read .grad after it returns).
+        captured_grad_norm = [None]
+        hook = (
+            gem.register_hook(lambda g: captured_grad_norm.__setitem__(0, g.detach().norm().item()))
+            if gem is not None
+            else None
+        )
+
+        train_metrics, output_dict = original(train_metrics, policy, batch, *args, **kwargs)
+
+        if gem is not None:
+            hook.remove()
+            output_dict["goal_emb/weight_norm"] = gem.data.norm().item()
+            if captured_grad_norm[0] is not None:
+                output_dict["goal_emb/grad_norm"] = captured_grad_norm[0]
+
+        return train_metrics, output_dict
+
+    return _update_policy_with_goal_logging
+
+
+def install(recipe: dict) -> None:
+    """Install both monkeypatches against `lerobot.scripts.lerobot_train`."""
+    _lerobot_train.make_dataset = _build_make_dataset(recipe)
+    _lerobot_train.update_policy = _wrap_update_policy(_lerobot_train.update_policy)

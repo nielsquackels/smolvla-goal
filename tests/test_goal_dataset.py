@@ -9,6 +9,8 @@ expose enough of the LeRobotDataset surface for the wrapper to work:
 `camera_keys`, `episodes`.
 """
 
+import random
+
 import numpy as np
 import torch
 
@@ -81,35 +83,54 @@ def test_goal_image_shape_and_key():
     assert item["observation.goal_image.0"].shape == (3, 4, 4)
 
 
-def test_goal_is_last_frame_of_same_episode():
-    ds = _FakeDataset(["observation.images.top"], [3, 4, 2])
+def test_goal_is_at_least_8_steps_ahead():
+    # Two episodes of length 16. For every frame, compute the expected goal
+    # frame deterministically and verify the goal image matches.
+    ds = _FakeDataset(["observation.images.top"], [16, 16])
     wrapped = GoalConditionedDataset(ds)
 
-    # Episode 0: frames 0..2, last is 2. Episode 1: frames 3..6, last is 6.
-    # Episode 2: frames 7..8, last is 8.
-    expected_last_frames = {0: 2, 1: 6, 2: 8}
     for frame_idx in range(len(ds)):
         item = wrapped[frame_idx]
         ep = int(item["episode_index"])
-        expected = ds[expected_last_frames[ep]]["observation.images.top"]
+        ep_start = ep * 16
+        within_ep = frame_idx - ep_start
+        future_start = within_ep + 8
+        if future_start < 16:
+            future_pool = list(range(ep_start + future_start, ep_start + 16))
+            expected_rel = random.Random(ep * 100_000 + within_ep).choice(future_pool)
+        else:
+            expected_rel = ep_start + 15  # fallback: last frame of episode
+        expected = ds[expected_rel]["observation.images.top"]
         assert torch.equal(item["observation.goal_image.0"], expected)
 
 
-def test_camera_selection_deterministic_per_episode():
-    # Multiple non-wrist cameras so RNG actually has a choice to make.
-    ds = _FakeDataset(
-        ["observation.images.top", "observation.images.side", "observation.images.front"],
-        [2, 2, 2, 2],
-    )
+def test_fallback_when_fewer_than_8_steps_remain():
+    # Episode of length 10. within_ep_pos >= 2 → future_start >= 10 → fallback to last (rel 9).
+    ds = _FakeDataset(["observation.images.top"], [10])
     wrapped = GoalConditionedDataset(ds)
 
-    # All frames from the same episode must get the same goal image.
-    ep0_goals = [wrapped[i]["observation.goal_image.0"] for i in (0, 1)]
-    assert torch.equal(ep0_goals[0], ep0_goals[1])
+    last_frame_goal = ds[9]["observation.images.top"]
+    for within_ep in range(2, 10):
+        item = wrapped[within_ep]
+        assert torch.equal(item["observation.goal_image.0"], last_frame_goal)
 
-    # Two different wrapper instances should pick the same camera per episode
-    # (deterministic via random.Random(episode_index)).
+    # Frame at pos 0 has a future pool ([8, 9]) and should NOT always be last.
+    item = wrapped[0]
+    expected_rel = random.Random(0).choice([8, 9])  # seed = 0 * 100_000 + 0
+    assert torch.equal(item["observation.goal_image.0"], ds[expected_rel]["observation.images.top"])
+
+
+def test_goal_selection_reproducible():
+    # Multiple non-wrist cameras so camera RNG has a real choice to make.
+    # Long episodes so goal frame RNG also has a real choice to make.
+    ds = _FakeDataset(
+        ["observation.images.top", "observation.images.side", "observation.images.front"],
+        [16, 16, 16, 16],
+    )
+    wrapped = GoalConditionedDataset(ds)
     wrapped2 = GoalConditionedDataset(ds)
+
+    # Two independent wrapper instances must agree on every frame.
     for i in range(len(ds)):
         assert torch.equal(
             wrapped[i]["observation.goal_image.0"],
@@ -118,31 +139,46 @@ def test_camera_selection_deterministic_per_episode():
 
 
 def test_wrist_excluded_when_alternatives_exist():
-    ds = _FakeDataset(
-        ["observation.images.wrist", "observation.images.top"], [4, 4, 4, 4, 4]
-    )
+    cameras = ["observation.images.wrist", "observation.images.top"]
+    ep_len = 16
+    ds = _FakeDataset(cameras, [ep_len] * 4)
     wrapped = GoalConditionedDataset(ds)
 
-    # Across many episodes, goal images must never match the wrist camera of
-    # the last frame — because wrist should be excluded from the selection pool.
-    for frame_idx in range(0, len(ds), 4):
+    for frame_idx in range(len(ds)):
         item = wrapped[frame_idx]
         ep = int(item["episode_index"])
-        last_idx = ds.meta.episodes[ep]["dataset_to_index"] - 1
-        wrist_last = ds[last_idx]["observation.images.wrist"]
-        top_last = ds[last_idx]["observation.images.top"]
-        assert not torch.equal(item["observation.goal_image.0"], wrist_last)
-        assert torch.equal(item["observation.goal_image.0"], top_last)
+        ep_start = ep * ep_len
+        within_ep = frame_idx - ep_start
+        future_start = within_ep + 8
+        if future_start < ep_len:
+            future_pool = list(range(ep_start + future_start, ep_start + ep_len))
+            goal_rel = random.Random(ep * 100_000 + within_ep).choice(future_pool)
+        else:
+            goal_rel = ep_start + ep_len - 1
+        # Goal must come from the top camera, not wrist.
+        assert torch.equal(item["observation.goal_image.0"], ds[goal_rel]["observation.images.top"])
+        assert not torch.equal(item["observation.goal_image.0"], ds[goal_rel]["observation.images.wrist"])
 
 
 def test_wrist_used_when_only_option():
-    ds = _FakeDataset(["observation.images.wrist_left"], [3, 3])
+    ep_len = 16
+    ds = _FakeDataset(["observation.images.wrist_left"], [ep_len, ep_len])
     wrapped = GoalConditionedDataset(ds)
-    item = wrapped[0]
-    last_idx = ds.meta.episodes[0]["dataset_to_index"] - 1
-    assert torch.equal(
-        item["observation.goal_image.0"], ds[last_idx]["observation.images.wrist_left"]
-    )
+
+    for frame_idx in range(len(ds)):
+        item = wrapped[frame_idx]
+        ep = int(item["episode_index"])
+        ep_start = ep * ep_len
+        within_ep = frame_idx - ep_start
+        future_start = within_ep + 8
+        if future_start < ep_len:
+            future_pool = list(range(ep_start + future_start, ep_start + ep_len))
+            goal_rel = random.Random(ep * 100_000 + within_ep).choice(future_pool)
+        else:
+            goal_rel = ep_start + ep_len - 1
+        assert torch.equal(
+            item["observation.goal_image.0"], ds[goal_rel]["observation.images.wrist_left"]
+        )
 
 
 def test_meta_augmentation():
@@ -173,8 +209,9 @@ def test_len_and_forwarded_attrs():
 
 if __name__ == "__main__":
     test_goal_image_shape_and_key()
-    test_goal_is_last_frame_of_same_episode()
-    test_camera_selection_deterministic_per_episode()
+    test_goal_is_at_least_8_steps_ahead()
+    test_fallback_when_fewer_than_8_steps_remain()
+    test_goal_selection_reproducible()
     test_wrist_excluded_when_alternatives_exist()
     test_wrist_used_when_only_option()
     test_meta_augmentation()
