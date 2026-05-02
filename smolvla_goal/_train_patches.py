@@ -20,6 +20,41 @@ from .episode_selection import select_episodes_per_task
 from .goal_dataset import GoalConditionedDataset
 
 
+class _EpisodeByValueLookup:
+    """Proxy that makes `episodes[ep_idx]` look up by episode_index VALUE.
+
+    LeRobot's DatasetReader and DatasetMetadata do `meta.episodes[ep_idx]`,
+    which is positional indexing into the underlying HF Dataset. That
+    silently assumes episode rows are stored in `[0, 1, ..., N-1]` order;
+    several community datasets and v2.1→v3.0 conversions break that
+    assumption, returning the wrong episode's `dataset_from/to_index` →
+    `KeyError` deep inside the dataloader.
+
+    Negative ints, slices, and column-name strings pass through unchanged.
+    """
+
+    def __init__(self, hf_dataset):
+        self._inner = hf_dataset
+        self._pos_by_value = {int(v): i for i, v in enumerate(hf_dataset["episode_index"])}
+
+    def __getitem__(self, key):
+        if isinstance(key, int) and key >= 0 and key in self._pos_by_value:
+            return self._inner[self._pos_by_value[key]]
+        return self._inner[key]
+
+    def __len__(self):
+        return len(self._inner)
+
+    def __iter__(self):
+        return iter(self._inner)
+
+    def __contains__(self, item):
+        return item in self._inner
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 def _build_sub_dataset(entry: dict, episodes_per_task: int, seed: int, policy_cfg):
     """Build one LeRobotDataset → NormalizedCameraDataset → GoalConditionedDataset."""
     repo_id = entry["repo_id"]
@@ -34,6 +69,7 @@ def _build_sub_dataset(entry: dict, episodes_per_task: int, seed: int, policy_cf
     del meta_only  # release file handles before reopening with episodes filter
 
     base = LeRobotDataset(repo_id, episodes=selected, delta_timestamps=delta_timestamps)
+    base.meta.episodes = _EpisodeByValueLookup(base.meta.episodes)
     normalized = NormalizedCameraDataset(base, camera_map=camera_map)
     return GoalConditionedDataset(normalized)
 
